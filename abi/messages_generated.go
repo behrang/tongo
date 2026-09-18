@@ -5252,7 +5252,7 @@ type CronTriggerExtInMsgBody struct {
 }
 
 type HipoFinanceFinishParticipationExtInMsgBody struct {
-	QueryId    uint32
+	QueryId    uint64
 	RoundSince uint32
 }
 

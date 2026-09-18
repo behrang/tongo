@@ -8,9 +8,13 @@ import (
 )
 
 // Every message below is a real one taken from mainnet, one per Hipo op declared in
-// hipo_finance.xml that this file covers. They are here because the op-codes are only half
-// the schema: a field declared at the wrong width still decodes, it just reports the wrong
-// number. TestHipoFinanceFieldWidths below pins the two that are easy to get wrong.
+// hipo_finance.xml that this file covers.
+//
+// Each case also asserts that decoding consumed the whole body. That is the point of the
+// test rather than a detail: a field declared at the wrong width still decodes, it just
+// reads the wrong bits and reports a plausible-looking number. finish_participation
+// declared with a uint32 query_id parsed happily and reported the low half of the query id
+// as the round, leaving 32 bits unread. Nothing but the leftover bits gives that away.
 func TestHipoFinanceMessages(t *testing.T) {
 	cases := []struct {
 		name string
@@ -56,6 +60,9 @@ func TestHipoFinanceMessages(t *testing.T) {
 			if *op != c.want {
 				t.Fatalf("got %v, want %v", *op, c.want)
 			}
+			if left := cells[0].BitsAvailableForRead(); left != 0 {
+				t.Errorf("%d bits left unread: a field is declared narrower than the contract writes it", left)
+			}
 		})
 	}
 }
@@ -94,13 +101,14 @@ func TestHipoFinanceFieldWidths(t *testing.T) {
 		t.Errorf("borrower_reward_share = %d, want 1799", loan.BorrowerRewardShare)
 	}
 
-	// finish_participation is the one op here whose query_id is 32 bits. Declared as uint64
-	// it swallows round_since, and the round the message is about is lost.
+	// finish_participation's query_id is 64 bits like every other op here, whatever
+	// contracts/schema.tlb says: treasury.fc reads load_uint(64) then load_uint(32) then
+	// end_parse(). Declared as uint32 it reports the low half of the query id as the round.
 	finish, ok := decode(t, "B5EE9C7201010101001200002023274435000000006A95CF676A944F08", true).(HipoFinanceFinishParticipationExtInMsgBody)
 	if !ok {
 		t.Fatalf("finish_participation did not decode to its body type")
 	}
-	if finish.RoundSince != 1788202855 {
-		t.Errorf("round_since = %d, want 1788202855", finish.RoundSince)
+	if finish.RoundSince != 1788104456 {
+		t.Errorf("round_since = %d, want 1788104456", finish.RoundSince)
 	}
 }

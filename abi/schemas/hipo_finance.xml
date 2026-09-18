@@ -14,8 +14,7 @@
     <!--
         Round lifecycle. These three arrive as EXTERNAL messages: treasury.fc routes them
         through route_external_message, which accepts nothing else, and no internal handler
-        takes them. finish_participation carries a uint32 query_id where every other op in
-        this file uses uint64.
+        takes them.
     -->
 
     <ext_in name="hipo_finance_participate_in_election">
@@ -32,7 +31,7 @@
     </ext_in>
     <ext_in name="hipo_finance_finish_participation">
         finish_participation#23274435
-        query_id:uint32
+        query_id:uint64
         round_since:uint32
         = ExternalMsgBody;
     </ext_in>

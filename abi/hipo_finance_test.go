@@ -117,47 +117,28 @@ func TestHipoFinanceFieldWidths(t *testing.T) {
 // to 16. Explorers reclassify history, so both layouts have to decode: a request from
 // before that release would otherwise turn back into raw hex. The two are told apart by
 // which reading consumes the body exactly, so neither can be mistaken for the other.
+//
+// Both messages below are real, one from each side of the release. The older one carries a
+// share of 8 on the old scale out of 255, which is the same bid as 2056 on the new one.
 func TestHipoFinanceRequestLoanBothEras(t *testing.T) {
-	// Built rather than captured, because the point is the boundary between the two
-	// layouts and one body has to be written in each.
-	build := func(shareBits int, share uint64) *boc.Cell {
-		coins := func(c *boc.Cell, v uint64) {
-			n := 0
-			for x := v; x > 0; x >>= 8 {
-				n++
-			}
-			c.WriteUint(uint64(n), 4)
-			c.WriteUint(v, n*8)
-		}
-		c := boc.NewCell()
-		c.WriteUint(0x36335da9, 32)
-		c.WriteUint(1789219115, 64)
-		c.WriteUint(1789284104, 32)
-		coins(c, 400222000000000)
-		coins(c, 195421000000)
-		c.WriteUint(share, shareBits)
-		stake := boc.NewCell()
-		stake.WriteUint(0, 256)
-		stake.WriteUint(1789284104, 32)
-		stake.WriteUint(196608, 32)
-		stake.WriteUint(0, 256)
-		sig := boc.NewCell()
-		sig.WriteUint(0, 512)
-		stake.AddRef(sig)
-		c.AddRef(stake)
-		return c
-	}
 	for _, c := range []struct {
-		name  string
-		bits  int
-		share uint64
-		want  MsgOpName
+		name string
+		body string
+		want MsgOpName
 	}{
-		{"before 2026-09-05", 8, 7, HipoFinanceRequestLoanV1MsgOp},
-		{"after 2026-09-05", 16, 1799, HipoFinanceRequestLoanMsgOp},
+		{"sent 2026-09-04, before the widening", "B5EE9C724101030100AE00013C36335DA9000000006A9ACF486A9B4F087038D7EA4C6800055D21DBA000080101903FB17DF20664C4E5A9C28B1DF3FE159CED3B01E67D7858CA2E9AA022DD2F94F16A9B4F080004800020791D63C50ED91D13E2B1F5D68589D5CC9A10B81AB775C3543BDFB9AC74F00C0200806DE2E5754D83CAFF1ED8654CA90D51E9D8224DFAF34E70B61BDEDD2D3FB255AD35333D0CBC4205D911B621782D22A47D4675C3EA31E3B07A3A7C371295E48605BA9A9BF8", HipoFinanceRequestLoanV1MsgOp},
+		{"sent after the widening", "B5EE9C720101030100AF00013E36335DA9000000006AA5512B6AA64F087016BFFF2242C0052D7FFFD14007070101901781DB04A92CB9444B3043E9C8DB1BB6FC23B7DA38B9E7902A8ECCDEA2632F796AA64F08000300000F130A89779CC0D6E9CBA7571982050AF2AD2C59206879E5762DC21235D3BA66020080BFF1F56BB51083DB7B22CF827282C6D759FEBE75B5D011DEC36EF29933D7AC763757B03237DA9F88F85982223F4F91C9801C33631536342937184DD93D46FE06", HipoFinanceRequestLoanMsgOp},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			_, op, _, err := InternalMessageDecoder(build(c.bits, c.share), nil)
+			raw, err := hex.DecodeString(c.body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cells, err := boc.DeserializeBoc(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, op, _, err := InternalMessageDecoder(cells[0], nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -166,6 +147,9 @@ func TestHipoFinanceRequestLoanBothEras(t *testing.T) {
 			}
 			if *op != c.want {
 				t.Fatalf("got %v, want %v", *op, c.want)
+			}
+			if left := cells[0].BitsAvailableForRead(); left != 0 {
+				t.Errorf("%d bits left unread", left)
 			}
 		})
 	}

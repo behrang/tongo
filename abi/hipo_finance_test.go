@@ -112,3 +112,61 @@ func TestHipoFinanceFieldWidths(t *testing.T) {
 		t.Errorf("round_since = %d, want 1788104456", finish.RoundSince)
 	}
 }
+
+// request_loan changed shape on 2026-09-05, when borrower_reward_share widened from 8 bits
+// to 16. Explorers reclassify history, so both layouts have to decode: a request from
+// before that release would otherwise turn back into raw hex. The two are told apart by
+// which reading consumes the body exactly, so neither can be mistaken for the other.
+func TestHipoFinanceRequestLoanBothEras(t *testing.T) {
+	// Built rather than captured, because the point is the boundary between the two
+	// layouts and one body has to be written in each.
+	build := func(shareBits int, share uint64) *boc.Cell {
+		coins := func(c *boc.Cell, v uint64) {
+			n := 0
+			for x := v; x > 0; x >>= 8 {
+				n++
+			}
+			c.WriteUint(uint64(n), 4)
+			c.WriteUint(v, n*8)
+		}
+		c := boc.NewCell()
+		c.WriteUint(0x36335da9, 32)
+		c.WriteUint(1789219115, 64)
+		c.WriteUint(1789284104, 32)
+		coins(c, 400222000000000)
+		coins(c, 195421000000)
+		c.WriteUint(share, shareBits)
+		stake := boc.NewCell()
+		stake.WriteUint(0, 256)
+		stake.WriteUint(1789284104, 32)
+		stake.WriteUint(196608, 32)
+		stake.WriteUint(0, 256)
+		sig := boc.NewCell()
+		sig.WriteUint(0, 512)
+		stake.AddRef(sig)
+		c.AddRef(stake)
+		return c
+	}
+	for _, c := range []struct {
+		name  string
+		bits  int
+		share uint64
+		want  MsgOpName
+	}{
+		{"before 2026-09-05", 8, 7, HipoFinanceRequestLoanV1MsgOp},
+		{"after 2026-09-05", 16, 1799, HipoFinanceRequestLoanMsgOp},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, op, _, err := InternalMessageDecoder(build(c.bits, c.share), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if op == nil {
+				t.Fatal("not decoded, so a request of this era is raw hex to every caller")
+			}
+			if *op != c.want {
+				t.Fatalf("got %v, want %v", *op, c.want)
+			}
+		})
+	}
+}
